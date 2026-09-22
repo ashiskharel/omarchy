@@ -1,0 +1,121 @@
+#!/bin/bash
+
+# omarchy:summary=Install phonetic and traditional Nepali Unicode keyboards
+# omarchy:requires-sudo=true
+
+set -euo pipefail
+
+echo "Installing Nepali Unicode keyboards..."
+omarchy-pkg-add fcitx5 fcitx5-gtk fcitx5-m17n m17n-db
+
+layouts="$OMARCHY_PATH/default/keyboard/nepali"
+if [[ ! -f $layouts/ne-phonetic.mim || ! -f $layouts/np ]]; then
+  echo "Nepali layout files are missing from $layouts." >&2
+  exit 1
+fi
+
+# fcitx5 writes its in-memory group back to the profile on exit. Stop it
+# before editing, or that save replaces the methods this command adds.
+restart_fcitx=0
+if systemctl --user is-active --quiet omarchy-fcitx5.service; then
+  systemctl --user stop omarchy-fcitx5.service
+  restart_fcitx=1
+fi
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+profile="$config_home/fcitx5/profile"
+mkdir -p "$(dirname "$profile")"
+
+if [[ ! -f $profile ]]; then
+  cat >"$profile" <<'EOF'
+[Groups/0]
+# Group Name
+Name=Default
+# Layout
+Default Layout=us
+# Default Input Method
+DefaultIM=keyboard-us
+
+[Groups/0/Items/0]
+# Name
+Name=keyboard-us
+# Layout
+# Layout=
+
+[GroupOrder]
+0=Default
+EOF
+fi
+
+add_im() {
+  local im=$1
+  local last next tmp
+
+  if grep -q "^Name=${im}$" "$profile"; then
+    return 0
+  fi
+
+  last=$(grep -o '^\[Groups/0/Items/[0-9][0-9]*\]' "$profile" | sed 's/.*Items\///; s/\]$//' | sort -n | tail -n 1 || true)
+  if [[ -z $last ]]; then
+    next=0
+  else
+    next=$((last + 1))
+  fi
+
+  tmp=$(mktemp)
+  awk -v idx="$next" -v name="$im" '
+    /^\[GroupOrder\]/ && !inserted {
+      print "[Groups/0/Items/" idx "]"
+      print "# Name"
+      print "Name=" name
+      print "# Layout"
+      print "# Layout="
+      print ""
+      inserted = 1
+    }
+    { print }
+    END {
+      if (!inserted) {
+        print ""
+        print "[Groups/0/Items/" idx "]"
+        print "# Name"
+        print "Name=" name
+        print "# Layout"
+        print "# Layout="
+      }
+    }
+  ' "$profile" >"$tmp"
+  mv "$tmp" "$profile"
+}
+
+mkdir -p "$config_home/xkb/symbols"
+cp "$layouts/np" "$config_home/xkb/symbols/np"
+add_im keyboard-np
+
+mkdir -p "$HOME/.m17n.d"
+cp "$layouts/ne-phonetic.mim" "$HOME/.m17n.d/ne-phonetic.mim"
+add_im m17n_ne_phonetic
+
+tmp=$(mktemp)
+awk '
+  /^DefaultIM=/ { print "DefaultIM=keyboard-us"; next }
+  { print }
+' "$profile" >"$tmp"
+mv "$tmp" "$profile"
+chmod 600 "$profile"
+
+if (( restart_fcitx )); then
+  systemctl --user start omarchy-fcitx5.service
+  i=0
+  while (( i < 20 )); do
+    if fcitx5-remote --check >/dev/null 2>&1; then
+      fcitx5-remote -s keyboard-us >/dev/null 2>&1 || true
+      break
+    fi
+    i=$((i + 1))
+    sleep 0.2
+  done
+fi
+
+echo "Nepali Unicode keyboards are installed."
+echo "Cycle methods with Ctrl+Space. US stays the default until you switch."
