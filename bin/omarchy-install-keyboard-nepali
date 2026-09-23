@@ -9,8 +9,8 @@ echo "Installing Nepali Unicode keyboards..."
 omarchy-pkg-add fcitx5 fcitx5-gtk fcitx5-m17n m17n-db
 
 layouts="$OMARCHY_PATH/default/keyboard/nepali"
-if [[ ! -f $layouts/ne-phonetic.mim || ! -f $layouts/np ]]; then
-  echo "Nepali layout files are missing from $layouts." >&2
+if [[ ! -f $layouts/ne-phonetic.mim ]]; then
+  echo "Nepali phonetic map is missing from $layouts." >&2
   exit 1
 fi
 
@@ -88,34 +88,27 @@ add_im() {
   mv "$tmp" "$profile"
 }
 
-mkdir -p "$config_home/xkb/symbols"
-cp "$layouts/np" "$config_home/xkb/symbols/np"
+# keyboard-np is the packaged xkeyboard-config layout. Do not copy a
+# symbols file over ~/.config/xkb, where it would replace a user's np.
 add_im keyboard-np
 
 mkdir -p "$HOME/.m17n.d"
-cp "$layouts/ne-phonetic.mim" "$HOME/.m17n.d/ne-phonetic.mim"
+phonetic="$HOME/.m17n.d/ne-phonetic.mim"
+if [[ -f $phonetic ]]; then
+  echo "Kept existing phonetic map (not updated): $phonetic"
+else
+  cp "$layouts/ne-phonetic.mim" "$phonetic"
+fi
 add_im m17n_ne_phonetic
 
-tmp=$(mktemp)
-awk '
-  /^DefaultIM=/ { print "DefaultIM=keyboard-us"; next }
-  { print }
-' "$profile" >"$tmp"
-mv "$tmp" "$profile"
 chmod 600 "$profile"
 
+# Start the service this command stopped. Do not select a method: fcitx5
+# saves the in-memory group on exit, so a live switch to keyboard-us would
+# replace a preference the profile edit just left alone.
 if (( restart_fcitx )); then
   systemctl --user start omarchy-fcitx5.service
-  i=0
-  while (( i < 20 )); do
-    if fcitx5-remote --check >/dev/null 2>&1; then
-      fcitx5-remote -s keyboard-us >/dev/null 2>&1 || true
-      break
-    fi
-    i=$((i + 1))
-    sleep 0.2
-  done
 fi
 
 echo "Nepali Unicode keyboards are installed."
-echo "Cycle methods with Ctrl+Space. US stays the default until you switch."
+echo "With the default fcitx5 hotkeys, hold Ctrl and press Space repeatedly to cycle methods. Release Ctrl on the one you want."
