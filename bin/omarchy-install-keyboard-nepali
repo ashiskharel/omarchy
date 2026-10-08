@@ -16,10 +16,20 @@ fi
 
 # fcitx5 writes its in-memory group back to the profile on exit. Stop it
 # before editing, or that save replaces the methods this command adds.
+# A failed write under set -e must still bring that service back. Start it
+# only when this command stopped it, and keep the original exit status.
 restart_fcitx=0
+restore_fcitx() {
+  local status=$1
+  if (( status != 0 && restart_fcitx )); then
+    systemctl --user start omarchy-fcitx5.service || true
+  fi
+  exit "$status"
+}
+trap 'restore_fcitx $?' EXIT
 if systemctl --user is-active --quiet omarchy-fcitx5.service; then
-  systemctl --user stop omarchy-fcitx5.service
   restart_fcitx=1
+  systemctl --user stop omarchy-fcitx5.service
 fi
 
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
