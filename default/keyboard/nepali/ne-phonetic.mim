@@ -1,5 +1,5 @@
 ;; ne-phonetic.mim — phonetic Nepali Unicode on a US keyboard.
-;; Original map. MIT. See ../LICENSE.
+;; Original map. MIT. See ../../../LICENSE.
 ;;
 ;; ka → क, kha → ख, kaa → का, namaste → नमस्ते.
 ;; A consonant keeps its inherent अ. The next vowel replaces that
