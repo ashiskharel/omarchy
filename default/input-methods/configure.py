@@ -35,8 +35,9 @@ def preset_key(engine):
 
 
 def install_input_maps(names):
-  # A map the user already has is theirs. Copy only when the file is missing,
-  # and do it before Fcitx starts so the engine is visible on that start.
+  # A map the user already has is theirs. Publish a new one only after the
+  # copy finishes, so a full disk cannot leave a partial file that later
+  # retries keep. The copy happens before Fcitx starts.
   home = Path.home()
   for name in names:
     source_name = PRESETS.get(name, {}).get("map")
@@ -51,7 +52,19 @@ def install_input_maps(names):
     if destination.exists():
       raise RuntimeError(f"{destination} is not a file")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
+    fd, temporary = tempfile.mkstemp(prefix=".omarchy-input-", dir=destination.parent)
+    os.close(fd)
+    try:
+      shutil.copyfile(source, temporary)
+      os.chmod(temporary, 0o644)
+      try:
+        os.link(temporary, destination)
+      except FileExistsError:
+        if not destination.is_file():
+          raise RuntimeError(f"{destination} is not a file")
+    finally:
+      if os.path.exists(temporary):
+        os.unlink(temporary)
 
 
 CONTROLLER = ["busctl", "--user", "call", "org.fcitx.Fcitx5", "/controller", "org.fcitx.Fcitx.Controller1"]
